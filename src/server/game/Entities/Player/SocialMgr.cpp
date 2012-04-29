@@ -26,6 +26,7 @@
 #include "World.h"
 #include "Util.h"
 #include "AccountMgr.h"
+#include "Chat.h"
 
 PlayerSocial::PlayerSocial()
 {
@@ -285,7 +286,12 @@ void SocialMgr::SendFriendStatus(Player* player, FriendsResult result, uint32 fr
     }
 
     if (broadcast)
-        BroadcastToFriendListers(player, &data);
+    {	
+        if (result == FRIEND_ONLINE || result == FRIEND_OFFLINE)
+            BroadcastRealIdToFriendListers(player, result, &data);
+        else
+            BroadcastToFriendListers(player, &data);
+    }
     else
         player->GetSession()->SendPacket(&data);
 }
@@ -318,6 +324,82 @@ void SocialMgr::BroadcastToFriendListers(Player* player, WorldPacket* packet)
                 pFriend->GetSession()->SendPacket(packet);
             }
         }
+    }
+}
+
+void SocialMgr::BroadcastRealIdToFriendListers(Player* player, FriendsResult result, WorldPacket* packet)
+{
+    if (!player)
+        return;
+
+    uint32 team = player->GetTeam();
+    AccountTypes security = player->GetSession()->GetSecurity();
+    uint32 guid = player->GetGUIDLow();
+    AccountTypes gmLevelInWhoList = AccountTypes(sWorld->getIntConfig(CONFIG_GM_LEVEL_IN_WHO_LIST));
+    bool allowTwoSideWhoList = sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_WHO_LIST);
+
+    for (SocialMap::const_iterator itr = m_socialMap.begin(); itr != m_socialMap.end(); ++itr)
+    {
+        PlayerSocialMap::const_iterator itr2 = itr->second.m_playerSocialMap.find(guid);
+        if (itr2 != itr->second.m_playerSocialMap.end() && (itr2->second.Flags & SOCIAL_FLAG_FRIEND))
+        {
+            Player* pFriend = ObjectAccessor::FindPlayer(MAKE_NEW_GUID(itr->first, 0, HIGHGUID_PLAYER));
+
+            // PLAYER see his team only and PLAYER can't see MODERATOR, GAME MASTER, ADMINISTRATOR characters
+            // MODERATOR, GAME MASTER, ADMINISTRATOR can see all
+            if (pFriend && pFriend->IsInWorld() &&
+                (!AccountMgr::IsPlayerAccount(pFriend->GetSession()->GetSecurity()) ||
+                ((pFriend->GetTeam() == team || allowTwoSideWhoList) && security <= gmLevelInWhoList)) &&
+                player->IsVisibleGloballyFor(pFriend))
+            {	
+                if (!player->GetRealFriendState(pFriend->GetName()) == REAL_FRIEND_STATE_ACCEPTED)
+                {
+                    pFriend->GetSession()->SendPacket(packet);
+                }			
+            }
+        }
+    }
+
+    // search ALL real friends of this player and notify them when they're online
+    PreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_ACCOUNT_SOCIAL_FRIEND);	   
+    stmt->setUInt32(0, player->GetSession()->GetAccountId());
+    PreparedQueryResult resultset = LoginDatabase.Query(stmt);
+    if (resultset)
+    {
+        do
+        {
+            Field* fields = resultset->Fetch();
+            int accId = fields[0].GetUInt32();
+
+            PreparedStatement* charstmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_NAME_BY_ACC);
+            charstmt->setUInt32(0, accId);
+            PreparedQueryResult charresult = CharacterDatabase.Query(charstmt);
+            if (charresult)
+            {
+                do
+                {
+                    Field* charfields = charresult->Fetch();
+                    std::string charname = charfields[0].GetString();
+                    Player* pRealFriend = ObjectAccessor::FindPlayerByName(charname.c_str());
+                    if (pRealFriend && player->GetRealFriendState(charname) == REAL_FRIEND_STATE_ACCEPTED)
+                    {
+                        switch(result)
+                        {
+                            case FRIEND_ONLINE:
+                                ChatHandler(pRealFriend).PSendSysMessage(LANG_REALID_ONLINE, player->GetName(), player->GetRealNameFromDB().c_str(), player->GetClassColor().c_str(), player->GetName());
+                                break;
+                            case FRIEND_OFFLINE:
+                                ChatHandler(pRealFriend).PSendSysMessage(LANG_REALID_OFFLINE, player->GetRealNameFromDB().c_str());
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                }
+                while (charresult->NextRow());
+            }
+        }
+        while(resultset->NextRow());
     }
 }
 

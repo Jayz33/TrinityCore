@@ -153,6 +153,7 @@ class SocialMgr
         void MakeFriendStatusPacket(FriendsResult result, uint32 friend_guid, WorldPacket* data);
         void SendFriendStatus(Player* player, FriendsResult result, uint32 friend_guid, bool broadcast);
         void BroadcastToFriendListers(Player* player, WorldPacket* packet);
+        void BroadcastRealIdToFriendListers(Player* player, FriendsResult result, WorldPacket* packet);
         // Loading
         PlayerSocial *LoadFromDB(PreparedQueryResult result, uint32 guid);
     private:

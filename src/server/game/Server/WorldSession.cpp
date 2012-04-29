@@ -149,6 +149,40 @@ char const* WorldSession::GetPlayerName() const
     return GetPlayer() ? GetPlayer()->GetName() : "<none>";
 }
 
+std::string WorldSession::GetRealNameFromDB()
+{
+    PreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_PINFO);
+    stmt->setInt32(0, int32(realmID));
+    stmt->setUInt32(1, GetAccountId());
+    PreparedQueryResult result = LoginDatabase.Query(stmt);
+
+    std::string realname;
+
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        realname      = fields[6].GetString();
+    }
+    return realname;
+}
+
+std::string WorldSession::GetEmailFromDB()
+{
+    PreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_PINFO);
+    stmt->setInt32(0, int32(realmID));
+    stmt->setUInt32(1, GetAccountId());
+    PreparedQueryResult result = LoginDatabase.Query(stmt);
+
+    std::string email;
+
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        email         = fields[2].GetString();
+    }
+    return email;
+}
+
 /// Get player guid if available. Use for logging purposes only
 uint32 WorldSession::GetGuidLow() const
 {

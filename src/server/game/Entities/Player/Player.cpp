@@ -7507,6 +7507,124 @@ uint32 Player::GetLevelFromDB(uint64 guid)
     return level;
 }
 
+std::string Player::GetRealNameFromDB()
+{
+    PreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_PINFO);
+    stmt->setInt32(0, int32(realmID));
+    stmt->setUInt32(1, GetSession()->GetAccountId());
+    PreparedQueryResult result = LoginDatabase.Query(stmt);
+
+    std::string realname;
+
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        realname      = fields[6].GetString();
+    }
+    return realname;
+}
+
+std::string Player::GetEmailFromDB()
+{
+    PreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_PINFO);
+    stmt->setInt32(0, int32(realmID));
+    stmt->setUInt32(1, GetSession()->GetAccountId());
+    PreparedQueryResult result = LoginDatabase.Query(stmt);
+
+    std::string email;
+
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        email         = fields[2].GetString();
+    }
+    return email;
+}
+
+RealFriendState Player::GetRealFriendState(std::string friendName)
+{
+    RealFriendState state = REAL_FRIEND_STATE_NOTHING;
+
+    PreparedStatement* accIdStmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_ACCOUNT_BY_NAME);
+    accIdStmt->setString(0, friendName);
+    PreparedQueryResult accIdResultset = CharacterDatabase.Query(accIdStmt);
+    Field* fields = accIdResultset->Fetch();
+    uint32 accId = fields[0].GetUInt32();
+
+    PreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_ACCOUNT_SOCIAL);
+    PreparedStatement* stmt2 = LoginDatabase.GetPreparedStatement(LOGIN_SEL_ACCOUNT_SOCIAL);
+    stmt->setUInt32(0, this->GetSession()->GetAccountId());
+    stmt->setUInt32(1, accId);
+    sLog->outString("Player Acc ID: %u  Friend Acc ID: %u", this->GetSession()->GetAccountId(), accId);
+
+    PreparedQueryResult resultset = LoginDatabase.Query(stmt);
+    if (resultset)   // Player has at least done a request
+    {
+        sLog->outString("Eerste resultset aanwezig");
+        stmt2->setUInt32(0, accId);
+        stmt2->setUInt32(1, this->GetSession()->GetAccountId());
+        PreparedQueryResult resultset2 = LoginDatabase.Query(stmt2);
+        state = REAL_FRIEND_STATE_REQUESTED;
+        if (resultset2)   // Player & friend both requested
+        {
+            sLog->outString("Tweede resultset aanwezig");
+            state = REAL_FRIEND_STATE_ACCEPTED;
+        }
+    }
+    else
+    {
+        PreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_ACCOUNT_SOCIAL);	    
+        stmt->setUInt32(0, accId);
+        stmt->setUInt32(1, this->GetSession()->GetAccountId());
+        PreparedQueryResult resultset = LoginDatabase.Query(stmt);
+        if (resultset)   // Player didn't request to the friend, but the friend requested to the player
+            state = REAL_FRIEND_STATE_FRIEND_REQUESTED;
+    }
+    return state;
+}
+
+std::string Player::GetClassColor()
+{
+    std::string color;
+    switch(getClass())
+    {
+    case CLASS_DEATH_KNIGHT:
+        color = "D82F2F";
+        break;
+    case CLASS_DRUID:
+        color = "FC971C";
+        break;
+    case CLASS_HUNTER:
+        color = "4EDA42";
+        break;
+    case CLASS_MAGE:
+        color = "30D9E5";
+        break;
+    case CLASS_PALADIN:
+        color = "FF96D0";
+        break;
+    case CLASS_PRIEST:
+        color = "FFFFFF";
+        break;
+    case CLASS_ROGUE:
+        color = "FBFD54";
+        break;
+    case CLASS_SHAMAN:
+        color = "382AF5";
+        break;
+    case CLASS_WARLOCK:
+        color = "AB24F9";
+        break;
+    case CLASS_WARRIOR:
+        color = "BF9637";
+        break;
+    default:
+        break;
+
+    }
+    return color;
+}
+
 void Player::UpdateArea(uint32 newArea)
 {
     // FFA_PVP flags are area and not zone id dependent

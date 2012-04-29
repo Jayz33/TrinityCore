@@ -246,6 +246,8 @@ class WorldSession
         uint32 GetAccountId() const { return _accountId; }
         Player* GetPlayer() const { return _player; }
         char const* GetPlayerName() const;
+        std::string GetRealNameFromDB();
+        std::string GetEmailFromDB();
         uint32 GetGuidLow() const;
         void SetSecurity(AccountTypes security) { _security = security; }
         std::string const& GetRemoteAddress() { return m_Address; }
@@ -474,6 +476,7 @@ class WorldSession
         void HandleContactListOpcode(WorldPacket& recvPacket);
         void HandleAddFriendOpcode(WorldPacket& recvPacket);
         void HandleAddFriendOpcodeCallBack(PreparedQueryResult result, std::string friendNote);
+        void HandleAddFriendOpcodeDirectly(PreparedQueryResult result, std::string friendNote);
         void HandleDelFriendOpcode(WorldPacket& recvPacket);
         void HandleAddIgnoreOpcode(WorldPacket& recvPacket);
         void HandleAddIgnoreOpcodeCallBack(PreparedQueryResult result);

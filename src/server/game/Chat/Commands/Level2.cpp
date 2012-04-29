@@ -278,6 +278,7 @@ bool ChatHandler::HandlePInfoCommand(const char* args)
     uint32 mapId;
     uint32 areaId;
     uint32 phase             = 0;
+    std::string realname;
 
     // get additional information from Player object
     if (target)
@@ -341,6 +342,7 @@ bool ChatHandler::HandlePInfoCommand(const char* args)
         security      = fields[1].GetUInt8();
         email         = fields[2].GetString();
         muteTime      = fields[5].GetUInt64();
+        realname      = fields[6].GetString();
 
         if (email.empty())
             email = "-";
@@ -378,7 +380,7 @@ bool ChatHandler::HandlePInfoCommand(const char* args)
 
     std::string nameLink = playerLink(target_name);
 
-    PSendSysMessage(LANG_PINFO_ACCOUNT, (target?"":GetTrinityString(LANG_OFFLINE)), nameLink.c_str(), GUID_LOPART(target_guid), username.c_str(), accId, email.c_str(), security, last_ip.c_str(), last_login.c_str(), latency);
+    PSendSysMessage(LANG_PINFO_ACCOUNT, (target?"":GetTrinityString(LANG_OFFLINE)), nameLink.c_str(), GUID_LOPART(target_guid), username.c_str(), accId, email.c_str(), security, last_ip.c_str(), last_login.c_str(), latency, realname.c_str());
 
     std::string bannedby = "unknown";
     std::string banreason = "";

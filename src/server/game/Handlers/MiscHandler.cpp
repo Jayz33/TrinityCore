@@ -534,22 +534,171 @@ void WorldSession::HandleAddFriendOpcode(WorldPacket & recv_data)
 
     recv_data >> friendNote;
 
-    if (!normalizePlayerName(friendName))
+    if (!friendName.find("@") && !normalizePlayerName(friendName))
         return;
 
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "WORLD: %s asked to add friend : '%s'", GetPlayer()->GetName(), friendName.c_str());
+    if (friendName.find("@") != std::string::npos)
+    {
+        if (friendName != GetPlayer()->GetEmailFromDB())
+        {
+            sLog->outDebug(LOG_FILTER_NETWORKIO, "WORLD: %s asked to add friend : '%s'", GetPlayer()->GetName(), friendName.c_str());
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GUID_RACE_ACC_BY_NAME);
+            PreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_ACCOUNT_LIST_BY_EMAIL);
 
-    stmt->setString(0, friendName);
+            stmt->setString(0, friendName);
+            PreparedQueryResult result = LoginDatabase.Query(stmt);
+            sLog->outString("Friend request for %s", friendName.c_str());
 
-    _addFriendCallback.SetParam(friendNote);
-    _addFriendCallback.SetFutureResult(CharacterDatabase.AsyncQuery(stmt));
+            if (result)
+            {
+                Field* fields       = result->Fetch();
+                uint32 id           = fields[0].GetUInt32();
+                std::string accname = fields[1].GetString();
+
+                PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_NAME_BY_ACC);
+
+                stmt->setUInt32(0, id);
+
+                PreparedQueryResult charsresult = CharacterDatabase.Query(stmt);
+                sLog->outString("Email %s is related to account with name %s and id %u", friendName.c_str(), accname.c_str(), id);
+			
+                if (charsresult)
+                {	
+                    // we use the first found character to check if they are real friends
+                    Field* charsfields     = charsresult->Fetch();
+                    std::string charname   = charsfields[0].GetString();
+                    //Player* pFriend = ObjectAccessor::FindPlayerByName(charname.c_str());
+                    if (GetPlayer()->GetRealFriendState(charname) == REAL_FRIEND_STATE_NOTHING || GetPlayer()->GetRealFriendState(charname) == REAL_FRIEND_STATE_FRIEND_REQUESTED)
+                    {
+                        do
+                        {
+                            Field* charsfields     = charsresult->Fetch();
+                            std::string charname   = charsfields[0].GetString();
+                            sLog->outString("Character: %s", charname.c_str());
+
+				
+                            PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GUID_RACE_ACC_BY_NAME);
+
+                            stmt->setString(0, charname);
+                            HandleAddFriendOpcodeDirectly(CharacterDatabase.AsyncQuery(stmt), friendNote);
+                            Player* pFriend = ObjectAccessor::FindPlayerByName(charname.c_str());
+                            if (pFriend && GetPlayer()->GetRealFriendState(charname) == REAL_FRIEND_STATE_NOTHING)
+                            {
+                                ChatHandler(pFriend).PSendSysMessage(LANG_REALID_REQUEST, GetPlayer()->GetClassColor().c_str(), GetPlayer()->GetName(), GetPlayer()->GetEmailFromDB());
+                            }
+                            else if (pFriend && GetPlayer()->GetRealFriendState(charname) == REAL_FRIEND_STATE_FRIEND_REQUESTED)
+                            {
+                                ChatHandler(pFriend).PSendSysMessage(LANG_REALID_ACCEPTED, GetPlayer()->GetClassColor().c_str(), GetPlayer()->GetName(), GetPlayer()->GetEmailFromDB());
+                            }
+
+                        }
+                        while (charsresult->NextRow());
+                        PreparedStatement* socialstmt = LoginDatabase.GetPreparedStatement(LOGIN_INS_ACCOUNT_SOCIAL);
+
+                        socialstmt->setUInt32(0, _player->GetSession()->GetAccountId());
+                        socialstmt->setUInt32(1, id);
+                        LoginDatabase.Query(socialstmt);
+                    }
+                    else if (GetPlayer()->GetRealFriendState(charname) == REAL_FRIEND_STATE_REQUESTED)
+                    {
+                        ChatHandler(_player).PSendSysMessage("You have already sent a friendship request for %s!", friendName);
+                    }
+                    else if (GetPlayer()->GetRealFriendState(charname) == REAL_FRIEND_STATE_ACCEPTED)
+                    {
+                        ChatHandler(_player).PSendSysMessage("%s has already accepted your friendship request!", friendName);
+                    }
+                }
+                else
+                {
+                    ChatHandler(_player).PSendSysMessage("This person does not have any characters!");
+                }
+
+
+            }
+            else
+            {
+                ChatHandler(_player).PSendSysMessage("There is no account with such email!");
+            }
+        }
+        else
+        {
+            ChatHandler(_player).PSendSysMessage("You cannot add yourself to the friendlist!");
+        }
+    }
+
+	
+
+    else
+    {
+        sLog->outString("Friend request for a character");
+        sLog->outDebug(LOG_FILTER_NETWORKIO, "WORLD: %s asked to add friend : '%s'", GetPlayer()->GetName(), friendName.c_str());
+
+        PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GUID_RACE_ACC_BY_NAME);
+
+        stmt->setString(0, friendName);
+
+        _addFriendCallback.SetParam(friendNote);
+        _addFriendCallback.SetFutureResult(CharacterDatabase.AsyncQuery(stmt));
+    }
 }
 
 void WorldSession::HandleAddFriendOpcodeCallBack(PreparedQueryResult result, std::string friendNote)
 {
     if (!GetPlayer())
+        return;
+
+    uint64 friendGuid;
+    uint32 friendAccountId;
+    uint32 team;
+    FriendsResult friendResult;
+
+    friendResult = FRIEND_NOT_FOUND;
+    friendGuid = 0;
+
+    if (result)
+    {
+        Field* fields = result->Fetch();
+
+        friendGuid = MAKE_NEW_GUID(fields[0].GetUInt32(), 0, HIGHGUID_PLAYER);
+        team = Player::TeamForRace(fields[1].GetUInt8());
+        friendAccountId = fields[2].GetUInt32();
+
+        if (!AccountMgr::IsPlayerAccount(GetSecurity()) || sWorld->getBoolConfig(CONFIG_ALLOW_GM_FRIEND) || AccountMgr::IsPlayerAccount(AccountMgr::GetSecurity(friendAccountId, realmID)))
+        {
+            if (friendGuid)
+            {
+                if (friendGuid == GetPlayer()->GetGUID())
+                    friendResult = FRIEND_SELF;
+                else if (GetPlayer()->GetTeam() != team && !sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_ADD_FRIEND) && AccountMgr::IsPlayerAccount(GetSecurity()))
+                    friendResult = FRIEND_ENEMY;
+                else if (GetPlayer()->GetSocial()->HasFriend(GUID_LOPART(friendGuid)))
+                    friendResult = FRIEND_ALREADY;
+                else
+                {
+                    Player* pFriend = ObjectAccessor::FindPlayer(friendGuid);
+                    if (pFriend && pFriend->IsInWorld() && pFriend->IsVisibleGloballyFor(GetPlayer()))
+                        friendResult = FRIEND_ADDED_ONLINE;
+                    else
+                        friendResult = FRIEND_ADDED_OFFLINE;
+                    if (!GetPlayer()->GetSocial()->AddToSocialList(GUID_LOPART(friendGuid), false))
+                    {
+                        friendResult = FRIEND_LIST_FULL;
+                        sLog->outDebug(LOG_FILTER_NETWORKIO, "WORLD: %s's friend list is full.", GetPlayer()->GetName());
+                    }
+                }
+                GetPlayer()->GetSocial()->SetFriendNote(GUID_LOPART(friendGuid), friendNote);
+            }
+        }
+    }
+
+    sSocialMgr->SendFriendStatus(GetPlayer(), friendResult, GUID_LOPART(friendGuid), false);
+
+    sLog->outDebug(LOG_FILTER_NETWORKIO, "WORLD: Sent (SMSG_FRIEND_STATUS)");
+}
+
+void WorldSession::HandleAddFriendOpcodeDirectly(PreparedQueryResult result, std::string friendNote)
+{
+	if (!GetPlayer())
         return;
 
     uint64 friendGuid;

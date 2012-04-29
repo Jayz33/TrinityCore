@@ -895,6 +895,14 @@ enum PlayerRestState
     REST_STATE_RAF_LINKED                            = 0x06
 };
 
+enum RealFriendState
+{
+    REAL_FRIEND_STATE_NOTHING                        = 0x01,
+    REAL_FRIEND_STATE_REQUESTED                      = 0x02,
+    REAL_FRIEND_STATE_ACCEPTED                       = 0x03,
+    REAL_FRIEND_STATE_FRIEND_REQUESTED               = 0x04
+};
+
 class PlayerTaxi
 {
     public:
@@ -1509,6 +1517,10 @@ class Player : public Unit, public GridObject<Player>
         static float  GetFloatValueFromArray(Tokens const& data, uint16 index);
         static uint32 GetZoneIdFromDB(uint64 guid);
         static uint32 GetLevelFromDB(uint64 guid);
+        std::string GetRealNameFromDB();
+        std::string GetEmailFromDB();
+        RealFriendState GetRealFriendState(std::string friendName);
+        std::string GetClassColor();
         static bool   LoadPositionFromDB(uint32& mapid, float& x, float& y, float& z, float& o, bool& in_flight, uint64 guid);
 
         static bool IsValidGender(uint8 Gender) { return Gender <= GENDER_FEMALE; }

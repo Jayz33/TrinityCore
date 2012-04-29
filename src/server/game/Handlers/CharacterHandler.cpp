@@ -663,9 +663,43 @@ void WorldSession::HandleCharCreateCallback(PreparedQueryResult result, Characte
             sScriptMgr->OnPlayerCreate(&newChar);
             sWorld->AddCharacterNameData(newChar.GetGUIDLow(), std::string(newChar.GetName()), newChar.getGender(), newChar.getRace(), newChar.getClass());
 
+            // Announce to real friends
+            // search ALL real friends of this player and notify them when they're online
+            PreparedStatement* accstmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_ACCOUNT_SOCIAL_FRIEND);	   
+            accstmt->setUInt32(0, GetAccountId());
+            PreparedQueryResult resultset = LoginDatabase.Query(accstmt);
+            if (resultset)
+            {
+                do
+                {
+                    Field* fields = resultset->Fetch();
+                    int accId = fields[0].GetUInt32();
+
+                    PreparedStatement* charstmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_NAME_BY_ACC);
+                    charstmt->setUInt32(0, accId);
+                    PreparedQueryResult charresult = CharacterDatabase.Query(charstmt);
+                    if (charresult)
+                    {
+                        do
+                        {
+                            Field* charfields = charresult->Fetch();
+                            std::string charname = charfields[0].GetString();
+                            Player* pRealFriend = ObjectAccessor::FindPlayerByName(charname.c_str());
+                            if (pRealFriend && newChar.GetRealFriendState(charname) == REAL_FRIEND_STATE_ACCEPTED)
+                            {	
+                                ChatHandler(pRealFriend).PSendSysMessage(LANG_REALID_NEWCHAR, newChar.GetRealNameFromDB().c_str(), newChar.GetClassColor().c_str(), newChar.GetName());
+                            }
+                        }
+                        while (charresult->NextRow());
+                    }
+                }
+                while(resultset->NextRow());
+            }
+
             newChar.CleanupsBeforeDelete();
             delete createInfo;
             _charCreateCallback.Reset();
+			
         }
         break;
     }
